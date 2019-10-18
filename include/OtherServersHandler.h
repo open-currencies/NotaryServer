@@ -88,6 +88,10 @@ private:
         volatile bool listen;
         void stopListener();
         volatile bool threadStopped;
+        // for time out thread
+        pthread_t attemptInterruptionThread;
+        volatile bool attemptInterrupterStopped;
+        volatile int socketNrInAttempt;
     };
 
     mutex contacts_mutex;
@@ -102,14 +106,9 @@ private:
     volatile bool reachOutRunning;
     volatile bool reachOutStopped;
 
+    static void *attemptInterrupter(void *servers);
     static void *socketReader(void *contactHandler);
     static void closeconnection(int sock);
-
-    // for time out thread
-    pthread_t attemptInterruptionThread;
-    volatile bool attemptInterrupterStopped;
-    static void *attemptInterrupter(void *servers);
-    volatile int socketNrInAttempt;
 
     static unsigned long long systemTimeInMs();
 

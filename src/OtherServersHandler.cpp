@@ -3,6 +3,7 @@
 #include "RequestProcessor.h"
 
 #define reachOutRoutineSleepTimeInMcrS 200000
+#define minAttempts 7
 #define maxAttempts 60
 #define attemptFreq 5
 #define tolerableConnectionGapInMs 11000
@@ -17,7 +18,6 @@ OtherServersHandler::OtherServersHandler(MessageBuilder *msgbuilder) : wellConne
     reachOutRunning=false;
     reachOutStopped=true;
     allowNewContacts=true;
-    attemptInterrupterStopped=true;
     if (msgBuilder!=nullptr) msgBuilder->setServersHandler(this);
 
     // initialize random seed
@@ -52,7 +52,6 @@ void OtherServersHandler::stopSafely()
 
     reachOutRunning=false;
     while (!reachOutStopped) usleep(100000);
-    while (!attemptInterrupterStopped) usleep(100000);
 
     trashAllContacts();
     bool trashRemoved=false;
@@ -64,6 +63,7 @@ void OtherServersHandler::stopSafely()
         contacts_mutex.unlock();
     }
     while (!trashRemoved);
+    puts("OtherServersHandler::stopSafely: clean up complete");
 }
 
 OtherServersHandler::~OtherServersHandler()
@@ -191,6 +191,9 @@ void OtherServersHandler::connectTo(unsigned long notary)
     }
     else ci=contactsToReach[notary];
 
+    // exit if connection is being set up
+    if (!ci->attemptInterrupterStopped) return;
+
     // exit if connection still open
     if (ci->socket!=-1 && ci->listen) return;
 
@@ -220,12 +223,17 @@ void OtherServersHandler::connectTo(unsigned long notary)
     const string ip = ci->ip;
     const int port = ci->port;
 
-    socketNrInAttempt=-1;
+    ci->socketNrInAttempt = -1;
+    ci->attemptInterrupterStopped = false;
+
     contacts_mutex.unlock(); // unlock for the connection build up
-    usleep(connectionTimeOutCheckInMs * 3 * 1000);
 
     const int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == -1) goto fail;
+    if (sock == -1)
+    {
+        ci->attemptInterrupterStopped = true;
+        goto fail;
+    }
 
     struct sockaddr_in server;
     server.sin_addr.s_addr = inet_addr(ip.c_str());
@@ -233,18 +241,19 @@ void OtherServersHandler::connectTo(unsigned long notary)
     server.sin_port = htons(port);
 
     // start attemptInterruptionThread
-    socketNrInAttempt=sock;
-    if(pthread_create(&attemptInterruptionThread, NULL, attemptInterrupter, (void*) this) < 0)
+    ci->socketNrInAttempt = sock;
+    if(pthread_create(&ci->attemptInterruptionThread, NULL, attemptInterrupter, (void*) ci) < 0)
     {
+        puts("OtherServersHandler::connectTo: failed to create attemptInterruptionThread");
+        ci->attemptInterrupterStopped = true;
         goto fail;
     }
-    pthread_detach(attemptInterruptionThread);
+    pthread_detach(ci->attemptInterruptionThread);
 
     if (connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0) goto fail;
     else // connection established
     {
         contacts_mutex.lock();
-        socketNrInAttempt=-1;
 
         // check that everything is still the same with ci
         ContactHandler* ci2;
@@ -258,6 +267,7 @@ void OtherServersHandler::connectTo(unsigned long notary)
             else ci2=contactsReachable[notary];
         }
         else ci2=contactsToReach[notary];
+        ci2->socketNrInAttempt = -1;
         // exit if necessary
         if (ci!=ci2)
         {
@@ -330,6 +340,8 @@ fail:
     }
     else ci=contactsToReach[notary];
 
+    ci->socketNrInAttempt = -1;
+
     if (ci->ip.compare(ip)==0 && ci->port==port)
     {
         ci->failedAttempts++;
@@ -338,7 +350,7 @@ fail:
             contactsToReach.erase(notary);
             contactsUnreachable.insert(pair<unsigned long, ContactHandler*>(notary, ci));
         }
-        else if (contactsReachable.count(notary)==1)
+        else if (contactsReachable.count(notary)==1 && ci->failedAttempts > minAttempts)
         {
             ContactHandler* contact = new ContactHandler(notary, ci->ip, ci->port, ci->validSince, ci->actingUntil);
             trashContact(ci);
@@ -589,7 +601,7 @@ void OtherServersHandler::sendContactsRqst()
 
 void OtherServersHandler::sendContactsList(list<string> &contacts, set<unsigned long> &notaries)
 {
-    if (contacts.size()==0 || notaries.size()==0 || !wellConnected()) return;
+    if (contacts.size()==0 || notaries.size()==0) return;
     set<unsigned long> remainingNotaries(notaries);
     while (remainingNotaries.size()>0)
     {
@@ -744,8 +756,9 @@ void OtherServersHandler::requestEntry(CompleteID entryID, unsigned long notaryN
 
 void OtherServersHandler::trashContact(ContactHandler* ch)
 {
+    ch->socketNrInAttempt=-1;
     ch->stopListener();
-    if (!ch->threadStopped) trashedContacts.insert(trashedContacts.end(), ch);
+    if (!ch->threadStopped || !ch->attemptInterrupterStopped) trashedContacts.insert(trashedContacts.end(), ch);
     else delete ch;
 }
 
@@ -757,7 +770,7 @@ bool OtherServersHandler::removeTrash()
     for (it=trashedContacts.begin(); it!=trashedContacts.end(); ++it)
     {
         ch=*it;
-        if (ch->threadStopped) removableContacts.insert(removableContacts.end(), ch);
+        if (ch->threadStopped && ch->attemptInterrupterStopped) removableContacts.insert(removableContacts.end(), ch);
     }
     for (it=removableContacts.begin(); it!=removableContacts.end(); ++it)
     {
@@ -804,7 +817,7 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
             }
             else if (!ch->listen)
             {
-                if (ch->lastListeningTime + tolerableConnectionGapInMs < currentTime || ch->failedAttempts>0)
+                if (ch->lastListeningTime + tolerableConnectionGapInMs < currentTime || ch->failedAttempts > minAttempts)
                 {
                     puts("OtherServersHandler::reachOutRoutine: no connection for too long");
                     ContactHandler* contact = new ContactHandler(notary, ch->ip, ch->port, ch->validSince, ch->actingUntil);
@@ -886,29 +899,28 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
 
     serversHandler->reachOutStopped=true;
     puts("OtherServersHandler::reachOutRoutine stopped");
-    pthread_exit(NULL);
+    return NULL;
 }
 
-void* OtherServersHandler::attemptInterrupter(void *servers)
+void* OtherServersHandler::attemptInterrupter(void *contactInfo)
 {
-    OtherServersHandler* serversHandler = (OtherServersHandler*) servers;
-    serversHandler->attemptInterrupterStopped = false;
-    int sock = serversHandler->socketNrInAttempt;
+    ContactHandler* ci = (ContactHandler*) contactInfo;
+    ci->attemptInterrupterStopped = false;
+    int sock = ci->socketNrInAttempt;
     if (sock == -1) goto close;
-    for(int counter = 0; serversHandler->reachOutRunning
-            && counter*connectionTimeOutCheckInMs < connectionTimeOutInMs; counter++)
+    for(int counter = 0; counter*connectionTimeOutCheckInMs < connectionTimeOutInMs; counter++)
     {
         usleep(connectionTimeOutCheckInMs * 1000);
-        if (sock != serversHandler->socketNrInAttempt)
+        if (sock != ci->socketNrInAttempt)
         {
             // connection must have been established
             goto close;
         }
     }
-    serversHandler->closeconnection(sock); // timeout
+    closeconnection(sock); // timeout
 close:
-    serversHandler->attemptInterrupterStopped = true;
-    pthread_exit(NULL);
+    ci->attemptInterrupterStopped = true;
+    return NULL;
 }
 
 void* OtherServersHandler::socketReader(void* contactInfo)
@@ -941,8 +953,7 @@ close:
     delete ci->answerBuilder;
     ci->answerBuilder=nullptr;
     ci->threadStopped=true;
-
-    pthread_exit(NULL);
+    return NULL;
 }
 
 OtherServersHandler::ContactHandler::ContactHandler(unsigned long n, string i, int p, unsigned long long v, unsigned long long au)
@@ -956,6 +967,8 @@ OtherServersHandler::ContactHandler::ContactHandler(unsigned long n, string i, i
     socket=-1;
     listen=false;
     threadStopped=true;
+    attemptInterrupterStopped=true;
+    socketNrInAttempt=-1;
     failedAttempts=0;
     lastConnectionTime=0;
     lastListeningTime=0;

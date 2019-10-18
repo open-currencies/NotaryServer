@@ -400,7 +400,7 @@ void *socketListener(void *portnr)
         clients_mutex.unlock();
     }
     puts("socketListener not running");
-    pthread_exit(NULL);
+    return NULL;
 }
 
 // handle connection for each client
@@ -442,7 +442,7 @@ close:
     }
     clients_mutex.unlock();
 
-    pthread_exit(NULL);
+    return NULL;
 }
 
 void *timeOutCheckRoutine(void *clientsList)

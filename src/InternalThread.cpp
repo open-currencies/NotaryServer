@@ -485,7 +485,7 @@ void* InternalThread::routine(void *internalThread)
 
     internal->stopped=true;
     puts("InternalThread::routine stopped");
-    pthread_exit(NULL);
+    return NULL;
 }
 
 void InternalThread::stopSafely()
