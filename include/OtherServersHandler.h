@@ -58,7 +58,13 @@ private:
     MessageBuilder* msgBuilder;
 
     bool sendMessage(unsigned long notaryNr, string &msg);
-    void connectTo(unsigned long notary);
+    struct ServersNotaryPair
+    {
+        OtherServersHandler* servers;
+        unsigned long notary;
+        ServersNotaryPair(OtherServersHandler* s, unsigned long n);
+    };
+    static void *connectToNotaryRoutine(void *serversNotaryPair);
     void removeDeadConnection(unsigned long notary);
 
     void trashAllContacts();
@@ -68,28 +74,26 @@ private:
     {
         ContactHandler(unsigned long n, string i, int p, unsigned long long v, unsigned long long au);
         ~ContactHandler();
-        unsigned long notaryNr;
-        string ip;
-        int port;
-        unsigned long long validSince;
-        unsigned long long actingUntil;
-        int failedAttempts;
+        const unsigned long notaryNr;
+        const string ip;
+        const int port;
+        volatile unsigned long long validSince;
+        volatile unsigned long long actingUntil;
+        volatile int failedAttempts;
         // message buffer data
         mutex message_buffer_mutex;
-        string messagesStr;
+        volatile string messagesStr;
         void addMessage(string &msg);
         size_t msgStrLength();
         // relevant if connection established:
         volatile unsigned long long lastConnectionTime;
         volatile unsigned long long lastListeningTime;
         volatile int socket;
-        RequestBuilder* answerBuilder;
-        pthread_t listenerThread;
-        volatile bool listen;
-        void stopListener();
-        volatile bool threadStopped;
+        volatile RequestBuilder* answerBuilder;
+        volatile pthread_t listenerThread;
+        volatile bool listenerThreadStopped;
         // for time out thread
-        pthread_t attemptInterruptionThread;
+        volatile pthread_t attemptInterruptionThread;
         volatile bool attemptInterrupterStopped;
         volatile int socketNrInAttempt;
     };

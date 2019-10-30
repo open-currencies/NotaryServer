@@ -33,6 +33,7 @@ using namespace std;
 void deleteTrashedClients();
 void *clientHandler(void *);
 void *socketListener(void *);
+volatile bool socketListenerRunning;
 void *timeOutCheckRoutine(void *);
 void closeconnection(int);
 bool toString(CryptoPP::RSA::PublicKey &, string &);
@@ -45,9 +46,11 @@ MessageBuilder * msgBuilder;
 struct Client
 {
     pthread_t clientThread;
-    volatile int sock;
+    volatile bool threadStopped;
+    const int sock;
     Client(int s) : sock(s)
     {
+        threadStopped=false;
     }
 };
 
@@ -170,6 +173,7 @@ int main()
     string msg("Starting socket listening on port ");
     msg.append(to_string(conf.ownPort));
     puts(msg.c_str());
+    socketListenerRunning = false;
     pthread_t socketListenerThread;
     if(pthread_create(&socketListenerThread, NULL, socketListener, (void*) &conf.ownPort) < 0)
     {
@@ -199,14 +203,13 @@ int main()
     // shutdown routine:
     running=false;
     internal.stopSafely();
-    pthread_cancel(socketListenerThread);
     clients_mutex.lock();
+    if (socketListenerRunning) pthread_cancel(socketListenerThread);
     set<Client*>::iterator it;
     for (it=clients.begin(); it!=clients.end(); ++it)
     {
         Client* client=*it;
         closeconnection(client->sock);
-        client->sock=-1;
     }
     clients_mutex.unlock();
     bool noclients=false;
@@ -257,20 +260,26 @@ bool toString(CryptoPP::RSA::PublicKey &publicKey, string &str)
 
 void deleteTrashedClients()
 {
+    set<Client*> removableClients;
     set<Client*>::iterator it;
-    Client* c;
     for (it=trashedClients.begin(); it!=trashedClients.end(); ++it)
     {
-        c=*it;
-        delete c;
+        if (*it!=nullptr && ((Client*)*it)->threadStopped) removableClients.insert(*it);
     }
-    trashedClients.clear();
+    for (it=removableClients.begin(); it!=removableClients.end(); ++it)
+    {
+        trashedClients.erase(*it);
+        delete *it;
+    }
+    removableClients.clear();
 }
 
 // open socket and wait for clients
 void *socketListener(void *portnr)
 {
-    int server_fd;
+    socketListenerRunning = true;
+
+    int server_fd = -1;
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
@@ -359,10 +368,10 @@ void *socketListener(void *portnr)
 
         // accept new client
         int new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-        if (!running)
+        if (!running || new_socket<0)
         {
-            if (new_socket!=-1) close(new_socket);
-            break;
+            if (new_socket!=-1) closeconnection(new_socket);
+            continue;
         }
 
         // check if this notary is banned
@@ -372,34 +381,51 @@ void *socketListener(void *portnr)
         db->unlock();
         if (amBanned) msgBuilder->sendAmBanned(new_socket);
 
-        clients_mutex.lock();
-
+        // create and start client thread
         Client* newClient = new Client(new_socket);
 
-        if(!running || pthread_create(&(newClient->clientThread), NULL, clientHandler, (void*) newClient) < 0)
+        clients_mutex.lock();
+        clients.insert(newClient);
+        const unsigned long long currentTime = msgBuilder->systemTimeInMs();
+        connectionTimeByClient.insert(pair<Client*, unsigned long long>(newClient, currentTime));
+        if (clientsByConnectionTime.count(currentTime)<=0)
         {
-            puts("could not create client thread");
-            closeconnection(new_socket);
-            delete newClient;
+            set<Client*>* emptyList = new set<Client*>();
+            clientsByConnectionTime.insert(pair<unsigned long long, set<Client*>*>(currentTime, emptyList));
         }
-        else
-        {
-            clients.insert(newClient);
-            const unsigned long long currentTime = msgBuilder->systemTimeInMs();
-            connectionTimeByClient.insert(pair<Client*, unsigned long long>(newClient, currentTime));
-            if (clientsByConnectionTime.count(currentTime)<=0)
-            {
-                set<Client*>* emptyList = new set<Client*>();
-                clientsByConnectionTime.insert(pair<unsigned long long, set<Client*>*>(currentTime, emptyList));
-            }
-            clientsByConnectionTime[currentTime]->insert(newClient);
-            pthread_detach(newClient->clientThread);
-        }
-        deleteTrashedClients();
+        clientsByConnectionTime[currentTime]->insert(newClient);
+        clients_mutex.unlock();
 
+        pthread_attr_t tattr;
+        pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+        if(!running || pthread_create(&(newClient->clientThread), &tattr, clientHandler, (void*) newClient) < 0)
+        {
+            puts("main::socketListener: could not create client thread");
+            closeconnection(new_socket);
+            clients_mutex.lock();
+            clients.erase(newClient);
+            connectionTimeByClient.erase(newClient);
+            if (clientsByConnectionTime.count(currentTime)>0)
+            {
+                clientsByConnectionTime[currentTime]->erase(newClient);
+                if (clientsByConnectionTime[currentTime]->size()<=0)
+                {
+                    delete clientsByConnectionTime[currentTime];
+                    clientsByConnectionTime.erase(currentTime);
+                }
+            }
+            delete newClient;
+            clients_mutex.unlock();
+        }
+
+        // clean up trash
+        clients_mutex.lock();
+        deleteTrashedClients();
         clients_mutex.unlock();
     }
     puts("socketListener not running");
+
+    socketListenerRunning = false;
     return NULL;
 }
 
@@ -409,15 +435,14 @@ void *clientHandler(void *client_struct)
     //Get the client structure
     Client* client = (Client*) client_struct;
     const int sock = client->sock;
-    int n;
-    byte buffer[1024];
-    RequestBuilder builder=RequestBuilder(maxRequestLength, requests, sock);
+    byte* buffer = new byte[1024];
+    RequestBuilder builder(maxRequestLength, requests, sock);
 
     // listen
     while(running)
     {
-        n=recv(sock, buffer, 1024, 0);
-        if(n<=0) goto close;
+        int n = recv(sock, buffer, 1024, 0);
+        if(n<=0 || n>1024) goto close;
         else
         {
             for (int i=0; i<n; i++)
@@ -427,21 +452,27 @@ void *clientHandler(void *client_struct)
         }
     }
 close:
+    delete[] buffer;
     clients_mutex.lock();
     closeconnection(client->sock);
-    client->sock=-1;
     trashedClients.insert(client);
     clients.erase(client);
-    unsigned long long connectionTime = connectionTimeByClient[client];
-    connectionTimeByClient.erase(client);
-    clientsByConnectionTime[connectionTime]->erase(client);
-    if (clientsByConnectionTime[connectionTime]->size()<=0)
+    if (connectionTimeByClient.count(client)>0)
     {
-        delete clientsByConnectionTime[connectionTime];
-        clientsByConnectionTime.erase(connectionTime);
+        unsigned long long connectionTime = connectionTimeByClient[client];
+        connectionTimeByClient.erase(client);
+        if (clientsByConnectionTime.count(connectionTime)>0)
+        {
+            clientsByConnectionTime[connectionTime]->erase(client);
+            if (clientsByConnectionTime[connectionTime]->size()<=0)
+            {
+                delete clientsByConnectionTime[connectionTime];
+                clientsByConnectionTime.erase(connectionTime);
+            }
+        }
     }
     clients_mutex.unlock();
-
+    client->threadStopped=true;
     return NULL;
 }
 

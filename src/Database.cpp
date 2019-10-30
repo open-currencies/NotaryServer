@@ -206,20 +206,20 @@ bool Database::init(unsigned long ownNr, TNtrNr corrNotary, CryptoPP::RSA::Publi
     set<unsigned long>::iterator it;
     for (it = notariesSet->begin(); it != notariesSet->end(); ++it)
     {
-        listEssentials->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, listEssentials->upToDateIDOverall));
-        listEssentials->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(listEssentials->upToDateIDOverall, *it));
+        listEssentials->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, *listEssentials->getUpToDateIDOverall()));
+        listEssentials->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(*listEssentials->getUpToDateIDOverall(), *it));
 
-        listGeneral->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, listGeneral->upToDateIDOverall));
-        listGeneral->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(listGeneral->upToDateIDOverall, *it));
+        listGeneral->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, *listGeneral->getUpToDateIDOverall()));
+        listGeneral->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(*listGeneral->getUpToDateIDOverall(), *it));
 
-        listTerminations->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, listTerminations->upToDateIDOverall));
-        listTerminations->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(listTerminations->upToDateIDOverall, *it));
+        listTerminations->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, *listTerminations->getUpToDateIDOverall()));
+        listTerminations->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(*listTerminations->getUpToDateIDOverall(), *it));
 
-        listPerpetuals->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, listPerpetuals->upToDateIDOverall));
-        listPerpetuals->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(listPerpetuals->upToDateIDOverall, *it));
+        listPerpetuals->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, *listPerpetuals->getUpToDateIDOverall()));
+        listPerpetuals->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(*listPerpetuals->getUpToDateIDOverall(), *it));
 
-        listTransfers->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, listTransfers->upToDateIDOverall));
-        listTransfers->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(listTransfers->upToDateIDOverall, *it));
+        listTransfers->individualUpToDates.insert(pair<unsigned long, CompleteID>(*it, *listTransfers->getUpToDateIDOverall()));
+        listTransfers->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(*listTransfers->getUpToDateIDOverall(), *it));
     }
     notariesSet->clear();
     delete notariesSet;
@@ -264,6 +264,7 @@ bool Database::dbUpToDate(unsigned long long wellConnectedSince)
 CompleteID Database::getUpToDateID(unsigned char listType)
 {
     UpToDateTimeInfo* info = getInfoFromType(listType);
+    if (info==nullptr) return CompleteID();
     // check if UpToDateTimeInfo follows the right notaries
     unsigned long long currentTime = systemTimeInMs();
     // first delete outdated notaries
@@ -300,12 +301,12 @@ CompleteID Database::getUpToDateID(unsigned char listType)
     {
         if (isActingNotary(notaryCandidate, currentTime) && notaryCandidate != ownNumber)
         {
-            info->individualUpToDates.insert(pair<unsigned long, CompleteID>(notaryCandidate, info->upToDateIDOverall));
-            info->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(info->upToDateIDOverall, notaryCandidate));
+            info->individualUpToDates.insert(pair<unsigned long, CompleteID>(notaryCandidate, *info->getUpToDateIDOverall()));
+            info->individualUpToDatesByID.insert(pair<CompleteID, unsigned long>(*info->getUpToDateIDOverall(), notaryCandidate));
         }
         notaryCandidate--;
     }
-    return info->upToDateIDOverall;
+    return *info->getUpToDateIDOverall();
 }
 
 Database::~Database()
@@ -326,19 +327,21 @@ Database::~Database()
 
     // destroy entriesToDownload, entriesInDownload
     map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>::iterator it;
-    for (it = entriesToDownload->begin(); it != entriesToDownload->end(); ++it)
+    for (it = ((map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload)->begin();
+            it != ((map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload)->end(); ++it)
     {
         DownloadStatus* status = it->second;
         delete status;
     }
-    entriesToDownload->clear();
+    ((map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload)->clear();
     delete entriesToDownload;
-    for (it = entriesInDownload->begin(); it != entriesInDownload->end(); ++it)
+    for (it = ((map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload)->begin();
+            it != ((map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload)->end(); ++it)
     {
         DownloadStatus* status = it->second;
         delete status;
     }
-    entriesInDownload->clear();
+    ((map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload)->clear();
     delete entriesInDownload;
 
     // destroy UpToDateTimeInfo
@@ -479,38 +482,42 @@ void Database::saveUpToDateTime(unsigned char listType)
     if (listType==0)
     {
         key.push_back('H'); // prefix for head
-        essentialEntries->Put(rocksdb::WriteOptions(), key, listEssentials->upToDateIDOverall.to20Char());
+        essentialEntries->Put(rocksdb::WriteOptions(), key, listEssentials->getUpToDateIDOverall()->to20Char());
     }
     else if (listType==1)
     {
         key.push_back('H'); // prefix for head
-        notarizationEntries->Put(rocksdb::WriteOptions(), key, listGeneral->upToDateIDOverall.to20Char());
+        notarizationEntries->Put(rocksdb::WriteOptions(), key, listGeneral->getUpToDateIDOverall()->to20Char());
     }
     else if (listType==2)
     {
         key.push_back('H'); // prefix for head
-        notaryApplications->Put(rocksdb::WriteOptions(), key, listTerminations->upToDateIDOverall.to20Char());
+        notaryApplications->Put(rocksdb::WriteOptions(), key, listTerminations->getUpToDateIDOverall()->to20Char());
     }
     else if (listType==3)
     {
         key.push_back('H'); // prefix for head
-        perpetualEntries->Put(rocksdb::WriteOptions(), key, listPerpetuals->upToDateIDOverall.to20Char());
+        perpetualEntries->Put(rocksdb::WriteOptions(), key, listPerpetuals->getUpToDateIDOverall()->to20Char());
     }
     else if (listType==4)
     {
         key.push_back('H'); // prefix for head
-        transfersWithFees->Put(rocksdb::WriteOptions(), key, listTransfers->upToDateIDOverall.to20Char());
+        transfersWithFees->Put(rocksdb::WriteOptions(), key, listTransfers->getUpToDateIDOverall()->to20Char());
     }
 }
 
 // for this the db object must be locked first
 CompleteID Database::getOldestEntryToDownload()
 {
-    if (entriesInDownload->empty() && entriesToDownload->empty()) return CompleteID(0,0,0);
-    else if (entriesInDownload->empty()) return entriesToDownload->begin()->first;
-    else if (entriesToDownload->empty()) return entriesInDownload->begin()->first;
-    CompleteID id1 = entriesToDownload->begin()->first;
-    CompleteID id2 = entriesInDownload->begin()->first;
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesInD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload;
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesToD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload;
+    if (entriesInD->empty() && entriesToD->empty()) return CompleteID(0,0,0);
+    else if (entriesInD->empty()) return entriesToD->begin()->first;
+    else if (entriesToD->empty()) return entriesInD->begin()->first;
+    CompleteID id1 = entriesToD->begin()->first;
+    CompleteID id2 = entriesInD->begin()->first;
     if (id1<id2) return id1;
     return id2;
 }
@@ -518,19 +525,27 @@ CompleteID Database::getOldestEntryToDownload()
 // for this the db object must be locked first
 size_t Database::getEntriesInDownload()
 {
-    return entriesToDownload->size() + entriesInDownload->size();
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesInD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload;
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesToD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload;
+    return entriesToD->size() + entriesInD->size();
 }
 
 // for this the db object must be locked first
 CompleteID Database::getNextEntryToDownload()
 {
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesInD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload;
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesToD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload;
     unsigned long long currentTime = systemTimeInMs();
     CompleteID zeroID;
-    while (!entriesToDownload->empty())
+    while (!entriesToD->empty())
     {
-        CompleteID id = entriesToDownload->begin()->first;
-        DownloadStatus *status = entriesToDownload->begin()->second;
-        entriesToDownload->erase(id);
+        CompleteID id = entriesToD->begin()->first;
+        DownloadStatus *status = entriesToD->begin()->second;
+        entriesToD->erase(id);
 
         if ((isInGeneralList(id) && getConnectedTransfer(id,zeroID)!=id)
                 || status->attempts >= maxDownloadAttempts)
@@ -553,7 +568,7 @@ CompleteID Database::getNextEntryToDownload()
         }
         else
         {
-            entriesInDownload->insert(pair<CompleteID, DownloadStatus*>(id,status));
+            entriesInD->insert(pair<CompleteID, DownloadStatus*>(id,status));
             // check if any predecessors still missing
             bool predecessorsMissing = true;
             if (missingPredecessors.count(id) > 0)
@@ -563,8 +578,8 @@ CompleteID Database::getNextEntryToDownload()
                 {
                     CompleteID firstMissing = listMissing->first();
                     if (isInGeneralList(firstMissing)
-                            || (entriesToDownload->count(firstMissing) <= 0
-                                && entriesInDownload->count(firstMissing) <= 0))
+                            || (entriesToD->count(firstMissing) <= 0
+                                && entriesInD->count(firstMissing) <= 0))
                     {
                         listMissing->deleteFirst();
                     }
@@ -618,7 +633,7 @@ CompleteID Database::getNextEntryToDownload()
             }
         }
     }
-    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *tmp=entriesInDownload;
+    volatile map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *tmp=entriesInDownload;
     entriesInDownload=entriesToDownload;
     entriesToDownload=tmp;
     return CompleteID(0,0,0);
@@ -8019,15 +8034,19 @@ bool Database::addType13Entry(Type13Entry* entry, bool integrateIfPossible)
         missingNotaries.erase(firstID);
     }
     DownloadStatus* status;
-    if ((*entriesToDownload).count(firstID)>0)
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesInD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload;
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesToD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload;
+    if ((*entriesToD).count(firstID)>0)
     {
-        status = (*entriesToDownload)[firstID];
-        (*entriesToDownload).erase(firstID);
+        status = (*entriesToD)[firstID];
+        (*entriesToD).erase(firstID);
     }
-    else if ((*entriesInDownload).count(firstID)>0)
+    else if ((*entriesInD).count(firstID)>0)
     {
-        status = (*entriesInDownload)[firstID];
-        (*entriesInDownload).erase(firstID);
+        status = (*entriesInD)[firstID];
+        (*entriesInD).erase(firstID);
     }
     else return true;
 
@@ -8073,23 +8092,30 @@ void Database::updateIndividualUpToDate(UpToDateTimeInfo* info, unsigned long no
     info->individualUpToDates[notary] = id;
     info->individualUpToDatesByID.erase(pair<CompleteID,unsigned long>(oldID, notary));
     info->individualUpToDatesByID.insert(pair<CompleteID,unsigned long>(id, notary));
-    info->upToDateIDOverall=CompleteID(0,0,0); // upToDateIDOverall has to be recalculated
+    CompleteID zeroID(0,0,0);
+    info->getUpToDateIDOverall()->resetTo(zeroID); // upToDateIDOverall has to be recalculated
 }
 
 // db to be locked for this
 bool Database::correctUpToDateTime(UpToDateTimeInfo* info)
 {
-    if (!info->upToDateIDOverall.isZero()) return false; // upToDateIDOverall is not subject to recalculation yet
+    if (!info->getUpToDateIDOverall()->isZero()) return false; // upToDateIDOverall is not subject to recalculation yet
     set<pair<CompleteID,unsigned long>, CompleteID::CompareIDIntPairs> *cIDs = &info->individualUpToDatesByID;
     if (cIDs->size() <= 0) return false;
     set<pair<CompleteID,unsigned long>, CompleteID::CompareIDIntPairs>::iterator it = cIDs->begin();
     advance(it, cIDs->size()/2);
-    info->upToDateIDOverall = it->first;
+    info->getUpToDateIDOverall()->resetTo(it->first);
     return true;
 }
 
 Database::UpToDateTimeInfo::UpToDateTimeInfo(CompleteID u) : upToDateIDOverall(u)
 {
+
+}
+
+CompleteID* Database::UpToDateTimeInfo::getUpToDateIDOverall()
+{
+    return (CompleteID*) &upToDateIDOverall;
 }
 
 Database::UpToDateTimeInfo::~UpToDateTimeInfo()
@@ -8258,30 +8284,34 @@ void Database::addToMissingNotaries(CompleteID &id, unsigned long notaryNr)
 // db to be locked for this
 void Database::insertEntryToDownload(CompleteID &id, unsigned char listType, unsigned long notary)
 {
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesInD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload;
+    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesToD =
+        (map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload;
     pair<unsigned char,unsigned long> listNotaryPair(listType,notary);
-    if ((*entriesToDownload).count(id)>0)
+    if ((*entriesToD).count(id)>0)
     {
-        if (notary>0 && (*entriesToDownload)[id]->neededFor.count(listNotaryPair)<=0)
-            (*entriesToDownload)[id]->neededFor.insert(listNotaryPair);
+        if (notary>0 && (*entriesToD)[id]->neededFor.count(listNotaryPair)<=0)
+            (*entriesToD)[id]->neededFor.insert(listNotaryPair);
     }
-    else if ((*entriesInDownload).count(id)>0)
+    else if ((*entriesInD).count(id)>0)
     {
-        if (notary>0 && (*entriesInDownload)[id]->neededFor.count(listNotaryPair)<=0)
-            (*entriesInDownload)[id]->neededFor.insert(listNotaryPair);
+        if (notary>0 && (*entriesInD)[id]->neededFor.count(listNotaryPair)<=0)
+            (*entriesInD)[id]->neededFor.insert(listNotaryPair);
     }
     else
     {
-        while ((*entriesToDownload).size() + (*entriesInDownload).size() > maxEntriesToDownload)
+        while ((*entriesToD).size() + (*entriesInD).size() > maxEntriesToDownload)
         {
             // delete entry with largest id
             // first determine map and largest id
-            map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *mapToDeleteFrom = entriesToDownload;
-            if (mapToDeleteFrom->size() <= 0) mapToDeleteFrom = entriesInDownload;
-            else if (entriesInDownload->size() > 0)
+            map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *mapToDeleteFrom = entriesToD;
+            if (mapToDeleteFrom->size() <= 0) mapToDeleteFrom = entriesInD;
+            else if (entriesInD->size() > 0)
             {
                 CompleteID candidate1=mapToDeleteFrom->rbegin()->first;
-                CompleteID candidate2=entriesInDownload->rbegin()->first;
-                if (candidate2>candidate1) mapToDeleteFrom = entriesInDownload;
+                CompleteID candidate2=entriesInD->rbegin()->first;
+                if (candidate2>candidate1) mapToDeleteFrom = entriesInD;
             }
             CompleteID idToDelete = mapToDeleteFrom->rbegin()->first;
             DownloadStatus* status = mapToDeleteFrom->rbegin()->second;
@@ -8306,7 +8336,7 @@ void Database::insertEntryToDownload(CompleteID &id, unsigned char listType, uns
         DownloadStatus* newDownloadStatus = new DownloadStatus();
         newDownloadStatus->attempts = 0;
         if (notary>0) newDownloadStatus->neededFor.insert(listNotaryPair);
-        (*entriesToDownload).insert(pair<CompleteID,DownloadStatus*>(id,newDownloadStatus));
+        (*entriesToD).insert(pair<CompleteID,DownloadStatus*>(id,newDownloadStatus));
     }
 }
 

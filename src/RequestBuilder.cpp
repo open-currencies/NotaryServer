@@ -55,7 +55,7 @@ bool RequestBuilder::addByte(byte b)
         else  // checking the checksum
         {
             const bool success = (targetCheckSum==checkSum);
-            if (success && requests!=nullptr) requests->process(requestLength, request, socket);
+            if (success && requests!=nullptr) ((RequestProcessor*)requests)->process(requestLength, (byte*)request, socket);
             delete[] request;
             requestLength=0;
             countToFour=0;

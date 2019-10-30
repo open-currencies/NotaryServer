@@ -137,7 +137,7 @@ private:
 
     struct UpToDateCondition
     {
-        CompleteID upToDateIDConditional;
+        const CompleteID upToDateIDConditional;
         set<CompleteID, CompleteID::CompareIDs> missingEntries; // what we need to download to satisfy condition
 
         UpToDateCondition(CompleteID &id1, CompleteID &id2);
@@ -146,23 +146,24 @@ private:
 
     struct UpToDateTimeInfo
     {
-        CompleteID upToDateIDOverall; // might have the role of a time stamp or id of actual entry
+        volatile CompleteID upToDateIDOverall; // might have the role of a time stamp or id of actual entry
         map<unsigned long, CompleteID> individualUpToDates; // highest id reported by the respective notary (and downloaded if applicable)
         set<pair<CompleteID,unsigned long>, CompleteID::CompareIDIntPairs> individualUpToDatesByID;
         map<unsigned long, UpToDateCondition*> conditionalUpToDates; // condition for individual upToDateID improvement
 
         UpToDateTimeInfo(CompleteID u);
         ~UpToDateTimeInfo();
+        CompleteID* getUpToDateIDOverall();
     };
 
     struct DownloadStatus
     {
         set<pair<unsigned char,unsigned long>> neededFor; // pair(listType, notary)
-        unsigned char attempts;
+        volatile unsigned char attempts;
     };
 
-    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesToDownload;
-    map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesInDownload;
+    volatile map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesToDownload;
+    volatile map<CompleteID, DownloadStatus*, CompleteID::CompareIDs> *entriesInDownload;
     map<CompleteID, CIDsSet*, CompleteID::CompareIDs> missingPredecessors;
     map<CompleteID, set<unsigned long>*, CompleteID::CompareIDs> missingNotaries;
     map<CompleteID, unsigned long long, CompleteID::CompareIDs> lastDownloadAttempt;

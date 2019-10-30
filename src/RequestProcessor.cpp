@@ -577,6 +577,9 @@ bool RequestProcessor::loadSupportingType13Entries(CompleteID &id, list<Type13En
             if (t13e==nullptr || !t13e->isGood())
             {
                 puts("RequestProcessor::loadSupportingType13Entries: bad t13e, unexpected");
+                deleteContent(target);
+                deleteContent(t13eListInc);
+                return false;
             }
             target.insert(it2, t13e);
         }
@@ -591,7 +594,10 @@ bool RequestProcessor::loadSupportingType13Entries(CompleteID &id, list<Type13En
 void RequestProcessor::deleteContent(list<Type13Entry*> &entries)
 {
     list<Type13Entry*>::iterator it;
-    for (it=entries.begin(); it!=entries.end(); ++it) delete *it;
+    for (it=entries.begin(); it!=entries.end(); ++it)
+    {
+        if (*it!=nullptr) delete *it;
+    }
     entries.clear();
 }
 
@@ -601,7 +607,7 @@ void RequestProcessor::deleteContent(list<list<Type13Entry*>*> &listOfLists)
     for (it=listOfLists.begin(); it!=listOfLists.end(); ++it)
     {
         deleteContent(**it);
-        delete *it;
+        if (*it!=nullptr) delete *it;
     }
     listOfLists.clear();
 }
@@ -615,8 +621,8 @@ void RequestProcessor::considerNotarizationEntryRequest(const size_t n, byte *re
     string signedSequence;
     string signature;
     Util u;
-    unsigned long notaryNr;
-    unsigned long long timeStamp;
+    unsigned long notaryNr=0;
+    unsigned long long timeStamp=0;
     size_t pos = 0;
     while (str.length()-pos > 8)
     {
@@ -1314,6 +1320,7 @@ void RequestProcessor::essentialsRequest(const size_t n, byte *request, const in
         if (!loadSupportingType13Entries(*it, *nextList))
         {
             puts("essentialsRequest: nextList could not be loaded");
+            deleteContent(*nextList);
             delete nextList;
             deleteContent(listOfT13eLists);
             return;

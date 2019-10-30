@@ -311,14 +311,14 @@ void MessageBuilder::sendPblcKeyInfo(list<Type13Entry*> &t13eList, int sock)
     msg.push_back((char)type);
     if (!addToString(t13eList, msg)) return;
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("PblcKeyInfo sent successfully");
+        //puts("MessageBuilder::PblcKeyInfo sent successfully");
     }
     else
     {
-        puts("sendPblcKeyInfo unsuccessful");
+        //puts("MessageBuilder::sendPblcKeyInfo unsuccessful");
     }
 }
 
@@ -372,14 +372,14 @@ void MessageBuilder::sendCurrOrOblInfo(list<Type13Entry*> &t13eList, int sock)
     msg.push_back((char)type);
     if (!addToString(t13eList, msg)) return;
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("CurrOrOblInfo sent successfully");
+        //puts("MessageBuilder::CurrOrOblInfo sent successfully");
     }
     else
     {
-        puts("sendCurrOrOblInfo unsuccessful");
+        //puts("MessageBuilder::sendCurrOrOblInfo unsuccessful");
     }
 }
 
@@ -399,14 +399,14 @@ void MessageBuilder::sendIdInfo(CompleteID &id, list<list<Type13Entry*>*> &listO
     // add claims
     if (!addToString(listOfT13eLists, msg)) return;
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("IdInfo sent successfully");
+        //puts("MessageBuilder::IdInfo sent successfully");
     }
     else
     {
-        puts("sendIdInfo unsuccessful");
+        //puts("MessageBuilder::sendIdInfo unsuccessful");
     }
 }
 
@@ -418,14 +418,14 @@ void MessageBuilder::sendContactInfo(string &contactInfo, int sock)
     // add contact info string
     msg.append(contactInfo);
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("contactInfo sent successfully");
+        //puts("MessageBuilder::contactInfo sent successfully");
     }
     else
     {
-        puts("sendContactInfo unsuccessful");
+        //puts("MessageBuilder::sendContactInfo unsuccessful");
     }
 }
 
@@ -444,14 +444,14 @@ void MessageBuilder::sendRefInfo(string &paramstr, RefereeInfo &refInfo, int soc
     // add ref info as string
     msg.append(*(refInfo.getByteSeq()));
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("RefInfo sent successfully");
+        //puts("MessageBuilder::RefInfo sent successfully");
     }
     else
     {
-        puts("sendRefInfo unsuccessful");
+        //puts("MessageBuilder::sendRefInfo unsuccessful");
     }
 }
 
@@ -470,14 +470,14 @@ void MessageBuilder::sendNotaryInfo(string &paramstr, NotaryInfo &notaryInfo, in
     // add notary info as string
     msg.append(*(notaryInfo.getByteSeq()));
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("NotaryInfo sent successfully");
+        //puts("MessageBuilder::NotaryInfo sent successfully");
     }
     else
     {
-        puts("sendNotaryInfo unsuccessful");
+        //puts("MessageBuilder::sendNotaryInfo unsuccessful");
     }
 }
 
@@ -496,14 +496,14 @@ void MessageBuilder::sendClaims(string paramstr, list<list<Type13Entry*>*> &list
     // add claims
     if (!addToString(listOfT13eLists, msg)) return;
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("Claims sent successfully");
+        //puts("MessageBuilder::Claims sent successfully");
     }
     else
     {
-        puts("sendClaims unsuccessful");
+        //puts("MessageBuilder::sendClaims unsuccessful");
     }
 }
 
@@ -522,14 +522,14 @@ void MessageBuilder::sendDecThreads(string paramstr, list<list<Type13Entry*>*> &
     // add entries
     if (!addToString(listOfT13eLists, msg)) return;
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("DecThreads sent successfully");
+        //puts("MessageBuilder::DecThreads sent successfully");
     }
     else
     {
-        puts("sendDecThreads unsuccessful");
+        //puts("MessageBuilder::sendDecThreads unsuccessful");
     }
 }
 
@@ -548,14 +548,14 @@ void MessageBuilder::sendEssentials(string paramstr, list<list<Type13Entry*>*> &
     // add claims
     if (!addToString(listOfT13eLists, msg)) return;
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("Essentials sent successfully");
+        //puts("MessageBuilder::Essentials sent successfully");
     }
     else
     {
-        puts("sendEssentials unsuccessful");
+        //puts("MessageBuilder::sendEssentials unsuccessful");
     }
 }
 
@@ -572,14 +572,14 @@ void MessageBuilder::sendTransactions(string paramstr, list<list<Type13Entry*>*>
     // add claims
     if (!addToString(listOfT13eLists, msg)) return;
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("Transactions sent successfully");
+        //puts("MessageBuilder::Transactions sent successfully");
     }
     else
     {
-        puts("sendTransactions unsuccessful");
+        //puts("MessageBuilder::sendTransactions unsuccessful");
     }
 }
 
@@ -598,14 +598,14 @@ void MessageBuilder::sendNextClaim(string paramstr, Type14Entry *t14e, int sock)
     // add claims
     msg.append(*(t14e->getByteSeq()));
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("NextClaim sent successfully");
+        //puts("MessageBuilder::NextClaim sent successfully");
     }
     else
     {
-        puts("sendNextClaim unsuccessful");
+        //puts("MessageBuilder::sendNextClaim unsuccessful");
     }
 }
 
@@ -615,14 +615,14 @@ void MessageBuilder::sendAmBanned(int sock)
     byte type = 244;
     message.push_back(type);
     packMessage(&message);
-    unsigned long result = send(sock, message.c_str(), message.length(), 0);
+    unsigned long result = send(sock, message.c_str(), message.length(), MSG_NOSIGNAL);
     if (result == message.length())
     {
-        //puts("AmBanned sent successfully");
+        //puts("MessageBuilder::AmBanned sent successfully");
     }
     else
     {
-        puts("sendAmBanned unsuccessful");
+        //puts("MessageBuilder::sendAmBanned unsuccessful");
     }
 }
 
@@ -634,14 +634,14 @@ void MessageBuilder::sendHeartBeat(int sock)
     Util u;
     message.append(u.UllAsByteSeq(systemTimeInMs()));
     packMessage(&message);
-    unsigned long result = send(sock, message.c_str(), message.length(), 0);
+    unsigned long result = send(sock, message.c_str(), message.length(), MSG_NOSIGNAL);
     if (result == message.length())
     {
-        //puts("heart beat sent successfully");
+        //puts("MessageBuilder::HeartBeat sent successfully");
     }
     else
     {
-        puts("heart beat unsuccessful");
+        //puts("MessageBuilder::sendHeartBeat unsuccessful");
     }
 }
 
@@ -676,14 +676,14 @@ void MessageBuilder::sendSignature(string *t13eStr, int sock)
     msg.append(u.UllAsByteSeq(t13eStr->length()));
     msg.append(*t13eStr);
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("Signature sent successfully");
+        //puts("MessageBuilder::Signature sent successfully");
     }
     else
     {
-        puts("sendSignature unsuccessful");
+        //puts("MessageBuilder::sendSignature unsuccessful");
     }
 }
 
@@ -705,14 +705,14 @@ void MessageBuilder::sendNewerIds(unsigned char listType, CompleteID id1, Comple
     msg.append(*signature);
     delete signature;
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("NewerIds sent successfully");
+        //puts("MessageBuilder::NewerIds sent successfully");
     }
     else
     {
-        puts("sendNewerIds unsuccessful");
+        //puts("MessageBuilder::sendNewerIds unsuccessful");
     }
 }
 
@@ -736,14 +736,14 @@ void MessageBuilder::sendNotarizationEntry(list<string> &entriesStr, int sock)
     msg.append(u.UllAsByteSeq(systemTimeInMs()));
     // pack and send
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("NotarizationEntry sent successfully");
+        //puts("MessageBuilder::NotarizationEntry sent successfully");
     }
     else
     {
-        puts("sendNotarizationEntry unsuccessful");
+        //puts("MessageBuilder::sendNotarizationEntry unsuccessful");
     }
 }
 
@@ -767,14 +767,14 @@ void MessageBuilder::sendNotarizationEntry(list<Type13Entry*> &t13eList, int soc
     msg.append(u.UllAsByteSeq(systemTimeInMs()));
     // pack and send
     packMessage(&msg);
-    unsigned long long result = send(sock, msg.c_str(), msg.length(), 0);
+    unsigned long long result = send(sock, msg.c_str(), msg.length(), MSG_NOSIGNAL);
     if (result == msg.length())
     {
-        //puts("NotarizationEntry sent successfully");
+        //puts("MessageBuilder::NotarizationEntry sent successfully");
     }
     else
     {
-        puts("sendNotarizationEntry unsuccessful");
+        //puts("MessageBuilder::sendNotarizationEntry unsuccessful");
     }
 }
 

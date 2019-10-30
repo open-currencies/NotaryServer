@@ -64,7 +64,7 @@ void* InternalThread::routine(void *internalThread)
     bool pubKeyIsRegistered = false;
     bool amActing = false;
     set<unsigned long>* notaries = nullptr;
-    unsigned long long currentTime = internal->db->systemTimeInMs();
+    unsigned long long currentTime;
     do
     {
         usleep(routineSleepTimeInMcrS);
@@ -368,6 +368,11 @@ void* InternalThread::routine(void *internalThread)
 
                 // create signature
                 Type13Entry* signedEntry = internal->msgBuilder->signEntry(&t13e, t12e, entryId);
+                if (signedEntry == nullptr)
+                {
+                    delete t12e;
+                    continue;
+                }
 
                 // store and send
                 internal->db->lock();
@@ -407,6 +412,10 @@ void* InternalThread::routine(void *internalThread)
                 internal->db->unlock();
 
                 Type13Entry* signedEntry = internal->msgBuilder->terminateAndSign(threadId);
+                if (signedEntry == nullptr)
+                {
+                    continue;
+                }
 
                 internal->db->lock();
                 bool result = internal->db->addType13Entry(signedEntry, false);

@@ -19,15 +19,15 @@ protected:
 private:
     volatile unsigned long lastDataTime;
     const unsigned long maxRequestLength;
-    RequestProcessor* requests;
+    const RequestProcessor* requests;
     const int socket;
 
-    byte *request;
-    unsigned long requestLength;
-    unsigned long p;
-    unsigned long checkSum;
-    unsigned long targetCheckSum;
-    int countToFour;
+    volatile byte *request;
+    volatile unsigned long requestLength;
+    volatile unsigned long p;
+    volatile unsigned long checkSum;
+    volatile unsigned long targetCheckSum;
+    volatile int countToFour;
 
     static unsigned long addModulo(unsigned long a, unsigned long b);
 };

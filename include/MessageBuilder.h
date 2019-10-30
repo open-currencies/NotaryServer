@@ -72,7 +72,7 @@ private:
     Database *db;
     OtherServersHandler *servers;
 
-    unsigned long long runningID;
+    volatile unsigned long long runningID;
     string newCompleteIDStr();
 
     Type13Entry* signEntry(Type13Entry* entry, Type12Entry* uEntry, CompleteID &notPredecessorID, string &newCIDStr);
