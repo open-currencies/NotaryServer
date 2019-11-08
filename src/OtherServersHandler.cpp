@@ -19,7 +19,8 @@ OtherServersHandler::OtherServersHandler(MessageBuilder *msgbuilder) : wellConne
     reachOutStopped=true;
     allowNewContacts=true;
     if (msgBuilder!=nullptr) msgBuilder->setServersHandler(this);
-
+    selectedNotaryPos=0;
+    reachableNotariesVectorCorrect=true;
     // initialize random seed
     srand(time(NULL));
 }
@@ -81,6 +82,51 @@ OtherServersHandler::~OtherServersHandler()
 
 }
 
+void OtherServersHandler::contactsReport()
+{
+    contacts_mutex.lock();
+    string msg;
+    map<unsigned long, ContactHandler*>::iterator it;
+    msg.append("Contacts reachable: ");
+    bool first=true;
+    for (it=contactsReachable.begin(); it!=contactsReachable.end(); ++it)
+    {
+        if (!first) msg.append(", ");
+        else first = false;
+        msg.append(to_string(it->first));
+    }
+    if (reachableNotariesVectorCorrect) msg.append("\nreachableNotariesVectorCorrect: true");
+    else msg.append("\nreachableNotariesVectorCorrect: false");
+    msg.append("\nreachable Notaries: ");
+    for (unsigned short i=0; i<reachableNotariesVector.size(); i++)
+    {
+        if (i!=0) msg.append(", ");
+        msg.append(to_string(reachableNotariesVector[i]));
+    }
+    msg.append("\nselectedNotaryPos: ");
+    msg.append(to_string(selectedNotaryPos));
+    msg.append("\nContacts to reach: ");
+    first=true;
+    for (it=contactsToReach.begin(); it!=contactsToReach.end(); ++it)
+    {
+        if (!first) msg.append(", ");
+        else first = false;
+        msg.append(to_string(it->first));
+    }
+    msg.append("\nContacts unreachable: ");
+    first=true;
+    for (it=contactsUnreachable.begin(); it!=contactsUnreachable.end(); ++it)
+    {
+        if (!first) msg.append(", ");
+        else first = false;
+        msg.append(to_string(it->first));
+    }
+    msg.append("\nNr. of trashed contacts: ");
+    msg.append(to_string(trashedContacts.size()));
+    puts(msg.c_str());
+    contacts_mutex.unlock();
+}
+
 void OtherServersHandler::trashAllContacts()
 {
     contacts_mutex.lock();
@@ -91,6 +137,7 @@ void OtherServersHandler::trashAllContacts()
         trashContact(it->second);
     }
     contactsReachable.clear();
+    reachableNotariesVectorCorrect=false;
 
     for (it=contactsUnreachable.begin(); it!=contactsUnreachable.end(); ++it)
     {
@@ -141,6 +188,7 @@ void OtherServersHandler::addContact(unsigned long notary, string ip, int port, 
             }
             contactsReachable.erase(notary);
             trashContact(ci);
+            reachableNotariesVectorCorrect=false;
         }
     }
     else if (contactsUnreachable.count(notary)==1)
@@ -228,6 +276,7 @@ void *OtherServersHandler::connectToNotaryRoutine(void *serversNotaryPair)
     if (cHandler->actingUntil <= currentTime)
     {
         serversHandler->contactsReachable.erase(notary);
+        serversHandler->reachableNotariesVectorCorrect=false;
         serversHandler->contactsToReach.erase(notary);
         serversHandler->trashContact(cHandler);
         serversHandler->contacts_mutex.unlock();
@@ -306,6 +355,7 @@ void *OtherServersHandler::connectToNotaryRoutine(void *serversNotaryPair)
         {
             serversHandler->contactsToReach.erase(notary);
             serversHandler->contactsReachable.insert(pair<unsigned long, ContactHandler*>(notary, cHandler));
+            serversHandler->reachableNotariesVectorCorrect=false;
         }
 
         // send outstanding messages + flush buffer:
@@ -338,6 +388,7 @@ registerFail: // contacts_mutex must be locked for this section
         ContactHandler* contact = new ContactHandler(notary, cHandler->ip, cHandler->port, cHandler->validSince, cHandler->actingUntil);
         serversHandler->trashContact(cHandler);
         serversHandler->contactsReachable.erase(notary);
+        serversHandler->reachableNotariesVectorCorrect=false;
         serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
     }
 
@@ -719,16 +770,33 @@ void OtherServersHandler::checkNewerEntry(unsigned char listType, unsigned long 
     sendMessage(notaryNr, message);
 }
 
-void OtherServersHandler::checkNewerEntry(unsigned char listType, CompleteID lastEntryID)
+void OtherServersHandler::checkNewerEntry(unsigned char listType, CompleteID lastEntryID, unsigned short maxNotaries)
 {
-    set<unsigned long> reachableNotaries;
-
     contacts_mutex.lock();
-    map<unsigned long, ContactHandler*>::iterator it;
-    for (it=contactsReachable.begin(); it!=contactsReachable.end(); ++it)
+
+    // rebuild reachableNotariesVector if necessary
+    if (!reachableNotariesVectorCorrect)
     {
-        reachableNotaries.insert(it->first);
+        reachableNotariesVector.clear();
+        map<unsigned long, ContactHandler*>::iterator it;
+        for (it=contactsReachable.begin(); it!=contactsReachable.end(); ++it)
+        {
+            reachableNotariesVector.push_back(it->first);
+        }
+        reachableNotariesVectorCorrect=true;
     }
+    unsigned short vectorSize = (unsigned short) reachableNotariesVector.size();
+    maxNotaries = min(maxNotaries, vectorSize);
+
+    // select notaries
+    set<unsigned long> selectedNotaries;
+    for (int i=0; i<maxNotaries; i++)
+    {
+        selectedNotaryPos = selectedNotaryPos % vectorSize;
+        selectedNotaries.insert(reachableNotariesVector[selectedNotaryPos]);
+        selectedNotaryPos++;
+    }
+
     contacts_mutex.unlock();
 
     // build message
@@ -740,8 +808,8 @@ void OtherServersHandler::checkNewerEntry(unsigned char listType, CompleteID las
     message.append(lastEntryID.to20Char());
     msgBuilder->packMessage(&message);
 
-    // send message to everyone
-    for (set<unsigned long>::iterator iter=reachableNotaries.begin(); iter!=reachableNotaries.end(); ++iter)
+    // send message to selected notaries
+    for (set<unsigned long>::iterator iter=selectedNotaries.begin(); iter!=selectedNotaries.end(); ++iter)
     {
         sendMessage(*iter, message);
     }
@@ -829,6 +897,7 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
             if (ch->actingUntil <= currentTime)
             {
                 serversHandler->contactsReachable.erase(notary);
+                serversHandler->reachableNotariesVectorCorrect=false;
                 serversHandler->trashContact(ch);
             }
             else if (ch->listenerThreadStopped)
@@ -839,6 +908,7 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
                     ContactHandler* contact = new ContactHandler(notary, ch->ip, ch->port, ch->validSince, ch->actingUntil);
                     serversHandler->trashContact(ch);
                     serversHandler->contactsReachable.erase(notary);
+                    serversHandler->reachableNotariesVectorCorrect=false;
                     serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
                 }
                 else if (ch->lastListeningTime + tolerableConnectionGapInMs/2 < currentTime || ch->msgStrLength()>0)
@@ -859,6 +929,7 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
                 ContactHandler* contact = new ContactHandler(notary, ch->ip, ch->port, ch->validSince, ch->actingUntil);
                 serversHandler->trashContact(ch);
                 serversHandler->contactsReachable.erase(notary);
+                serversHandler->reachableNotariesVectorCorrect=false;
                 serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
             }
         }

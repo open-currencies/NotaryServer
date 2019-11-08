@@ -768,7 +768,7 @@ void RequestProcessor::considerNotarizationEntryRequest(const size_t n, byte *re
             db->lock();
             CompleteID upToDateID = db->getUpToDateID(listType);
             db->unlock();
-            sh->checkNewerEntry(listType, upToDateID);
+            sh->checkNewerEntry(listType, upToDateID, 2);
         }
 
         // try to download something

@@ -8,6 +8,7 @@
 #include <set>
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
+#include "rocksdb/table.h"
 #include "Entry.h"
 #include "Type1Entry.h"
 #include "Type2Entry.h"
@@ -49,6 +50,8 @@ public:
     Database(const string& dbDir);
     bool init(unsigned long ownNr, TNtrNr corrNotary, CryptoPP::RSA::PublicKey* corrNotaryPublicKey);
     ~Database();
+    void rocksdbReport();
+    void upToDateReport();
     bool loadNewerEntriesIds(unsigned char listType, CompleteID &benchmarkId, CIDsSet &newerIDs);
     CompleteID getUpToDateID(unsigned char listType);
     size_t getEntriesInDownload();
@@ -118,6 +121,7 @@ protected:
 private:
     mutex db_mutex;
     Type1Entry* type1entry;
+    rocksdb::BlockBasedTableOptions table_options;
     rocksdb::DB* notaries;
     rocksdb::DB* entriesInNotarization;
     rocksdb::DB* notarizationEntries;

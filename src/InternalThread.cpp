@@ -2,18 +2,20 @@
 
 #define routineSleepTimeInMcrS 10000
 
-#define checkNewEntriesFreq 1000 // in ms
-#define downloadNewEntriesFreq 600 // in ms
-#define updateServersFreq 5000
-#define signEntriesFreq 75
-#define terminateThreadsFreq 700
-#define registerKeyFreq 2000
-#define startRenotarizationsFreq 1200
-#define updateNotariesListFreq 2000
-#define checkUpToDateStatusFreq 1500
-#define reportUpToDateStatusFreq 2000
-#define reportContactsFreq 15000
-#define updateRenotarizationAttemptsFreq 15000
+#define checkNewEntriesInterval 400 // in ms
+
+#define signEntriesInterval 75 // in ms
+#define downloadNewEntriesInterval 600 // in ms
+#define terminateThreadsInterval 700 // in ms
+#define startRenotarizationsInterval 1200 // in ms
+
+#define checkUpToDateStatusInterval 1500 // in ms
+#define reportUpToDateStatusInterval 2000 // in ms
+#define updateNotariesListInterval 2000 // in ms
+#define registerKeyInterval 2000 // in ms
+#define updateServersInterval 5000 // in ms
+#define reportContactsInterval 20000 // in ms
+#define updateRenotarizationAttemptsInterval 15000 // in ms
 
 #define maxLoopRepetitionsAtOnce 1000000
 
@@ -77,7 +79,7 @@ void* InternalThread::routine(void *internalThread)
             internal->db->addContactsToServers(internal->servers, tNotaryNr.getNotaryNr());
             internal->db->unlock();
 
-            updateServersNext=currentTime+updateServersFreq;
+            updateServersNext=currentTime+updateServersInterval;
         }
 
         // check for missing entries
@@ -89,9 +91,9 @@ void* InternalThread::routine(void *internalThread)
                 CompleteID upToDateID = internal->db->getUpToDateID(listType);
                 internal->db->unlock();
 
-                internal->servers->checkNewerEntry(listType, upToDateID);
+                internal->servers->checkNewerEntry(listType, upToDateID, 1);
             }
-            checkNewEntriesNext=currentTime+checkNewEntriesFreq;
+            checkNewEntriesNext=currentTime+checkNewEntriesInterval;
         }
 
         // download missing entries
@@ -108,7 +110,7 @@ void* InternalThread::routine(void *internalThread)
                 internal->servers->requestEntry(entryID, internal->servers->getSomeReachableNotary());
             }
 
-            downloadNewEntriesNext=currentTime+downloadNewEntriesFreq;
+            downloadNewEntriesNext=currentTime+downloadNewEntriesInterval;
         }
 
         // check db up-to-date status
@@ -201,11 +203,11 @@ void* InternalThread::routine(void *internalThread)
                 }
                 else if (!upToDate) puts("Database now up-to-date.");
 
-                reportUpToDateStatusNext=currentTime+reportUpToDateStatusFreq;
+                reportUpToDateStatusNext=currentTime+reportUpToDateStatusInterval;
             }
 
             upToDate=upToDateNew;
-            checkUpToDateStatusNext=currentTime+checkUpToDateStatusFreq;
+            checkUpToDateStatusNext=currentTime+checkUpToDateStatusInterval;
         }
 
         // rebuild corresponding notaries list
@@ -232,7 +234,7 @@ void* InternalThread::routine(void *internalThread)
             actingNotaries->clear();
             delete actingNotaries;
 
-            updateNotariesListNext = currentTime + updateNotariesListFreq;
+            updateNotariesListNext = currentTime + updateNotariesListInterval;
         }
 
         // report contacts
@@ -261,7 +263,7 @@ void* InternalThread::routine(void *internalThread)
             // request contact infos for yourself
             internal->servers->sendContactsRqst();
 
-            reportContactsNext=currentTime+reportContactsFreq;
+            reportContactsNext=currentTime+reportContactsInterval;
         }
 
         // check that server is well-connected and up-to-date
@@ -307,7 +309,7 @@ void* InternalThread::routine(void *internalThread)
                 type13entryStr = "";
                 type12entryStr = "";
             }
-            signEntriesNext=currentTime+signEntriesFreq;
+            signEntriesNext=currentTime+signEntriesInterval;
         }
 
         // update renotarization attempts
@@ -316,7 +318,7 @@ void* InternalThread::routine(void *internalThread)
             internal->db->lock();
             internal->db->updateRenotarizationAttempts();
             internal->db->unlock();
-            updateRenotarizationAttemptsNext=currentTime+updateRenotarizationAttemptsFreq;
+            updateRenotarizationAttemptsNext=currentTime+updateRenotarizationAttemptsInterval;
         }
 
         // start renotarizations
@@ -387,7 +389,7 @@ void* InternalThread::routine(void *internalThread)
                 delete signedEntry;
                 delete t12e;
             }
-            startRenotarizationsNext=currentTime+startRenotarizationsFreq;
+            startRenotarizationsNext=currentTime+startRenotarizationsInterval;
         }
 
         pubKeyIsRegistered = pubKeyIsRegistered && internal->db->isFreshNow(pubKeyId);
@@ -427,7 +429,7 @@ void* InternalThread::routine(void *internalThread)
                 }
                 delete signedEntry;
             }
-            terminateThreadsNext=currentTime+terminateThreadsFreq;
+            terminateThreadsNext=currentTime+terminateThreadsInterval;
         }
 
         // register own public key
@@ -486,7 +488,7 @@ void* InternalThread::routine(void *internalThread)
                         puts("InternalThread::routine: could not load own notary public key from db");
                     }
                 }
-                registerKeyNext=currentTime+registerKeyFreq;
+                registerKeyNext=currentTime+registerKeyInterval;
             }
         }
     }

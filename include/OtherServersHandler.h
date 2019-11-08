@@ -33,7 +33,7 @@ public:
     void addContact(unsigned long notary, string ip, int port, unsigned long long validSince, unsigned long long activeUntil);
     void startConnector(RequestProcessor* r);
     void stopSafely();
-    void checkNewerEntry(unsigned char listType, CompleteID lastEntryID);
+    void checkNewerEntry(unsigned char listType, CompleteID lastEntryID, unsigned short maxNotaries);
     void checkNewerEntry(unsigned char listType, unsigned long notaryNr, CompleteID lastEntryID);
     unsigned long long getWellConnectedSince();
     bool wellConnected();
@@ -50,6 +50,7 @@ public:
     void askForInitialType13Entry(CompleteID &id, unsigned long notaryNr);
     void loadContactsReachable(list<unsigned long> &notariesList);
     void sendContactsRqst();
+    void contactsReport();
 protected:
 private:
     volatile unsigned long long wellConnectedSince;
@@ -117,6 +118,10 @@ private:
     static unsigned long long systemTimeInMs();
 
     void sendNewSignature(string *t13eStr, unsigned long notaryNr, unsigned short participationRank);
+
+    vector<unsigned long> reachableNotariesVector;
+    volatile bool reachableNotariesVectorCorrect;
+    volatile unsigned short selectedNotaryPos;
 };
 
 #endif // OTHERSERVERSHANDLER_H

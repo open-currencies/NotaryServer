@@ -3,9 +3,10 @@
 #define discountTimeBufferInMs 60000
 #define maxEntriesToDownload 1000
 #define maxDownloadAttempts 5
-#define minUpToDateTimeBufferInMs 6000
+#define minUpToDateTimeBufferInMs 7000
 #define participationTimeBufferInMs 250
 #define minTimeBetweenDownloadAttemptsInMs 3000
+#define blockCacheSizeInMb 500
 
 Database::Database(const string& dbDir) : ownNumber(0)
 {
@@ -18,8 +19,16 @@ Database::Database(const string& dbDir) : ownNumber(0)
     }
 
     // options for rocksdb
+    table_options.block_cache = rocksdb::NewLRUCache(blockCacheSizeInMb * 1024 * 1024LL);
+    table_options.cache_index_and_filter_blocks = true;
+    table_options.pin_l0_filter_and_index_blocks_in_cache = true;
     rocksdb::Options options;
+    options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
+    options.optimize_filters_for_hits = true;
+    options.write_buffer_size = 16 * 1024 * 1024;
+    options.max_write_buffer_number = 5;
     options.create_if_missing = true;
+
     rocksdb::Status status;
 
     // loading notaries list
@@ -119,6 +128,111 @@ Database::Database(const string& dbDir) : ownNumber(0)
     }
 
     puts("Database loaded successfully.");
+}
+
+void Database::upToDateReport()
+{
+    lock();
+    string msg;
+    msg.append("entriesToDownload: ");
+    msg.append(to_string(((map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesToDownload)->size()));
+
+    msg.append("\nentriesInDownload: ");
+    msg.append(to_string(((map<CompleteID, DownloadStatus*, CompleteID::CompareIDs>*)entriesInDownload)->size()));
+
+    msg.append("\nmissingPredecessors: ");
+    msg.append(to_string(missingPredecessors.size()));
+
+    msg.append("\nmissingNotaries: ");
+    msg.append(to_string(missingNotaries.size()));
+
+    msg.append("\nsize of lastDownloadAttempt: ");
+    msg.append(to_string(lastDownloadAttempt.size()));
+
+    msg.append("\nsize of entriesToSign: ");
+    msg.append(to_string(entriesToSign.size()));
+
+    msg.append("\nsize of listEssentials->individualUpToDatesByID: ");
+    msg.append(to_string(listEssentials->individualUpToDatesByID.size()));
+
+    msg.append("\nsize of listGeneral->individualUpToDatesByID: ");
+    msg.append(to_string(listGeneral->individualUpToDatesByID.size()));
+
+    msg.append("\nsize of listTerminations->individualUpToDatesByID: ");
+    msg.append(to_string(listTerminations->individualUpToDatesByID.size()));
+
+    msg.append("\nsize of listPerpetuals->individualUpToDatesByID: ");
+    msg.append(to_string(listPerpetuals->individualUpToDatesByID.size()));
+
+    msg.append("\nsize of listTransfers->individualUpToDatesByID: ");
+    msg.append(to_string(listTransfers->individualUpToDatesByID.size()));
+
+    puts(msg.c_str());
+    unlock();
+}
+
+void Database::rocksdbReport()
+{
+    lock();
+    string msg;
+    msg.append("Block cache usage: ");
+    msg.append(to_string(table_options.block_cache->GetUsage()));
+
+    msg.append("\n  Pinned usage: ");
+    msg.append(to_string(table_options.block_cache->GetPinnedUsage()));
+
+    msg.append("\nIndex and filter blocks (notaries): ");
+    string out;
+    notaries->GetProperty("rocksdb.estimate-table-readers-mem", &out);
+    msg.append(out);
+
+    msg.append("\nMemtable (notaries): ");
+    out.clear();
+    notaries->GetProperty("rocksdb.cur-size-all-mem-tables", &out);
+    msg.append(out);
+
+    msg.append("\nIndex and filter blocks (entriesInNotarization): ");
+    out.clear();
+    entriesInNotarization->GetProperty("rocksdb.estimate-table-readers-mem", &out);
+    msg.append(out);
+
+    msg.append("\nMemtable (entriesInNotarization): ");
+    out.clear();
+    entriesInNotarization->GetProperty("rocksdb.cur-size-all-mem-tables", &out);
+    msg.append(out);
+
+    msg.append("\nIndex and filter blocks (notarizationEntries): ");
+    out.clear();
+    notarizationEntries->GetProperty("rocksdb.estimate-table-readers-mem", &out);
+    msg.append(out);
+
+    msg.append("\nMemtable (notarizationEntries): ");
+    out.clear();
+    notarizationEntries->GetProperty("rocksdb.cur-size-all-mem-tables", &out);
+    msg.append(out);
+
+    msg.append("\nIndex and filter blocks (publicKeys): ");
+    out.clear();
+    publicKeys->GetProperty("rocksdb.estimate-table-readers-mem", &out);
+    msg.append(out);
+
+    msg.append("\nMemtable (publicKeys): ");
+    out.clear();
+    publicKeys->GetProperty("rocksdb.cur-size-all-mem-tables", &out);
+    msg.append(out);
+
+    msg.append("\nIndex and filter blocks (perpetualEntries): ");
+    out.clear();
+    perpetualEntries->GetProperty("rocksdb.estimate-table-readers-mem", &out);
+    msg.append(out);
+
+    msg.append("\nMemtable (perpetualEntries): ");
+    out.clear();
+    perpetualEntries->GetProperty("rocksdb.cur-size-all-mem-tables", &out);
+    msg.append(out);
+
+    puts(msg.c_str());
+    unlock();
 }
 
 bool Database::init(unsigned long ownNr, TNtrNr corrNotary, CryptoPP::RSA::PublicKey* corrNotaryPublicKey)

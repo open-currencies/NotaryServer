@@ -36,6 +36,7 @@ void *socketListener(void *);
 volatile bool socketListenerRunning;
 void *timeOutCheckRoutine(void *);
 void closeconnection(int);
+void clientsReport();
 bool toString(CryptoPP::RSA::PublicKey &, string &);
 
 Database * db;
@@ -194,11 +195,37 @@ int main()
 
     puts("Server started, waiting for commands.");
     string command;
-    do
+    for (int k=0; k<100 && command.compare("stop")!=0; k++)
     {
-        cin >> command;
+        command.clear();
+        getline(cin, command);
+        string msg("Command: ");
+        msg.append(command);
+        puts(msg.c_str());
+        if (command.compare("stop")==0)
+        {
+        }
+        else if (command.compare("rocksdb")==0)
+        {
+            db->rocksdbReport();
+        }
+        else if (command.compare("clients")==0)
+        {
+            clientsReport();
+        }
+        else if (command.compare("servers")==0)
+        {
+            servers->contactsReport();
+        }
+        else if (command.compare("uptodate")==0)
+        {
+            db->upToDateReport();
+        }
+        else
+        {
+            puts("unknown command");
+        }
     }
-    while (command.compare("stop") != 0);
 
     // shutdown routine:
     running=false;
@@ -230,6 +257,22 @@ int main()
     delete msgBuilder;
 
     exit(EXIT_SUCCESS);
+}
+
+void clientsReport()
+{
+    clients_mutex.lock();
+    string msg;
+    msg.append("Clients: ");
+    msg.append(to_string(clients.size()));
+    msg.append("\nSize of connectionTimeByClient: ");
+    msg.append(to_string(connectionTimeByClient.size()));
+    msg.append("\nSize of clientsByConnectionTime: ");
+    msg.append(to_string(clientsByConnectionTime.size()));
+    msg.append("\ntrashed Clients: ");
+    msg.append(to_string(trashedClients.size()));
+    puts(msg.c_str());
+    clients_mutex.unlock();
 }
 
 void closeconnection(int sock)
