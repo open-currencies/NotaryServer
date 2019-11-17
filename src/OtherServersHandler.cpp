@@ -230,45 +230,49 @@ void OtherServersHandler::addContact(unsigned long notary, string ip, int port, 
     }
 
     // add contact to the list of connections to establish
-    ContactHandler* contact = new ContactHandler(notary, ip, port, validSince, activeUntil);
-    if (contact->ip.length()>3) contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
-    else contactsUnreachable.insert(pair<unsigned long, ContactHandler*>(notary, contact));
+    ContactHandler* contact = new ContactHandler(notary, ip, port, validSince, activeUntil, this);
+    if (contact->ip.length()>3)
+    {
+        if (contactsToReach.count(notary) > 0)
+        {
+            puts("OtherServersHandler::addContact: pre-existing contact in contactsToReach");
+            exit(EXIT_FAILURE);
+        }
+        else contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
+    }
+    else
+    {
+        if (contactsUnreachable.count(notary) > 0)
+        {
+            puts("OtherServersHandler::addContact: pre-existing contact in contactsUnreachable");
+            exit(EXIT_FAILURE);
+        }
+        else contactsUnreachable.insert(pair<unsigned long, ContactHandler*>(notary, contact));
+    }
     contacts_mutex.unlock();
 }
 
-void *OtherServersHandler::connectToNotaryRoutine(void *serversNotaryPair)
+void OtherServersHandler::connectToNotaryRoutine(ContactHandler *contactHandler)
 {
-    ServersNotaryPair* sNPair=(ServersNotaryPair*) serversNotaryPair;
-    OtherServersHandler* serversHandler = sNPair->servers;
-    const unsigned long notary = sNPair->notary;
-    delete sNPair;
+    ContactHandler* cHandler = (ContactHandler*) contactHandler;
+    OtherServersHandler* serversHandler = (OtherServersHandler*) cHandler->serversHandler;
+    const unsigned long notary = cHandler->notaryNr;
 
     serversHandler->contacts_mutex.lock();
 
     if (!serversHandler->reachOutRunning)
     {
+        cHandler->connectToThreadStopped = true;
         serversHandler->contacts_mutex.unlock();
-        return NULL;
+        return;
     }
-
-    // build contact handler
-    ContactHandler* cHandler;
-    if (serversHandler->contactsToReach.count(notary)!=1)
-    {
-        if (serversHandler->contactsReachable.count(notary)!=1)
-        {
-            serversHandler->contacts_mutex.unlock();
-            return NULL;
-        }
-        else cHandler=serversHandler->contactsReachable[notary];
-    }
-    else cHandler=serversHandler->contactsToReach[notary];
 
     // exit if existing connection / connection is being set up
     if (!cHandler->listenerThreadStopped || !cHandler->attemptInterrupterStopped)
     {
+        cHandler->connectToThreadStopped = true;
         serversHandler->contacts_mutex.unlock();
-        return NULL;
+        return;
     }
 
     // delete notary if not acting
@@ -279,8 +283,9 @@ void *OtherServersHandler::connectToNotaryRoutine(void *serversNotaryPair)
         serversHandler->reachableNotariesVectorCorrect=false;
         serversHandler->contactsToReach.erase(notary);
         serversHandler->trashContact(cHandler);
+        cHandler->connectToThreadStopped = true;
         serversHandler->contacts_mutex.unlock();
-        return NULL;
+        return;
     }
 
     const string ip = cHandler->ip;
@@ -307,14 +312,9 @@ void *OtherServersHandler::connectToNotaryRoutine(void *serversNotaryPair)
 
     // start attemptInterruptionThread
     cHandler->socketNrInAttempt = sock;
-    if(pthread_create((pthread_t*) &cHandler->attemptInterruptionThread, NULL, attemptInterrupter, (void*) cHandler) < 0)
-    {
-        puts("OtherServersHandler::connectToNotaryRoutine: failed to create attemptInterruptionThread");
-        serversHandler->contacts_mutex.lock();
-        cHandler->attemptInterrupterStopped = true;
-        goto registerFail;
-    }
-    pthread_detach(cHandler->attemptInterruptionThread); // attemptInterruptionThread started
+    if (cHandler->attemptInterruptionThread != nullptr) delete cHandler->attemptInterruptionThread;
+    cHandler->attemptInterruptionThread = new thread(attemptInterrupter, cHandler);
+    ((thread*)cHandler->attemptInterruptionThread)->detach();
 
     // connecting ...
     if (connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0)
@@ -337,24 +337,20 @@ void *OtherServersHandler::connectToNotaryRoutine(void *serversNotaryPair)
             exit(EXIT_FAILURE);
         }
         cHandler->answerBuilder = new RequestBuilder(maxRequestLength, serversHandler->answers, sock);
-        if(pthread_create((pthread_t*) &cHandler->listenerThread, NULL, socketReader, (void*) cHandler) < 0)
-        {
-            puts("OtherServersHandler::connectToNotaryRoutine: could not create socketReader thread");
-            closeconnection(sock);
-            delete cHandler->answerBuilder;
-            cHandler->answerBuilder=nullptr;
-            cHandler->socket=-1;
-            cHandler->listenerThreadStopped = true;
-            serversHandler->contacts_mutex.unlock();
-            return NULL;
-        }
-        pthread_detach(cHandler->listenerThread);
+        if (cHandler->listenerThread != nullptr) delete cHandler->listenerThread;
+        cHandler->listenerThread = new thread(socketReader, cHandler);
+        ((thread*)cHandler->listenerThread)->detach();
 
         // mark notary as reachable
         if (serversHandler->contactsToReach.count(notary)==1)
         {
             serversHandler->contactsToReach.erase(notary);
-            serversHandler->contactsReachable.insert(pair<unsigned long, ContactHandler*>(notary, cHandler));
+            if (serversHandler->contactsReachable.count(notary) > 0)
+            {
+                puts("OtherServersHandler::connectToNotaryRoutine: pre-existing contact in contactsReachable");
+                exit(EXIT_FAILURE);
+            }
+            else serversHandler->contactsReachable.insert(pair<unsigned long, ContactHandler*>(notary, cHandler));
             serversHandler->reachableNotariesVectorCorrect=false;
         }
 
@@ -372,8 +368,9 @@ void *OtherServersHandler::connectToNotaryRoutine(void *serversNotaryPair)
         ((string*)&cHandler->messagesStr)->clear();
         cHandler->message_buffer_mutex.unlock();
 
+        cHandler->connectToThreadStopped = true;
         serversHandler->contacts_mutex.unlock();
-        return NULL;
+        return;
     }
 registerFail: // contacts_mutex must be locked for this section
 
@@ -381,20 +378,32 @@ registerFail: // contacts_mutex must be locked for this section
     if (serversHandler->contactsToReach.count(notary)==1 && cHandler->failedAttempts > maxAttempts)
     {
         serversHandler->contactsToReach.erase(notary);
-        serversHandler->contactsUnreachable.insert(pair<unsigned long, ContactHandler*>(notary, cHandler));
+        if (serversHandler->contactsUnreachable.count(notary) > 0)
+        {
+            puts("OtherServersHandler::connectToNotaryRoutine: pre-existing contact in contactsUnreachable");
+            exit(EXIT_FAILURE);
+        }
+        else serversHandler->contactsUnreachable.insert(pair<unsigned long, ContactHandler*>(notary, cHandler));
     }
     else if (serversHandler->contactsReachable.count(notary)==1 && cHandler->failedAttempts > minAttempts)
     {
-        ContactHandler* contact = new ContactHandler(notary, cHandler->ip, cHandler->port, cHandler->validSince, cHandler->actingUntil);
+        ContactHandler* contact = new ContactHandler(notary, cHandler->ip, cHandler->port, cHandler->validSince,
+                cHandler->actingUntil, serversHandler);
         serversHandler->trashContact(cHandler);
         serversHandler->contactsReachable.erase(notary);
         serversHandler->reachableNotariesVectorCorrect=false;
-        serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
+        if (serversHandler->contactsToReach.count(notary) > 0)
+        {
+            puts("OtherServersHandler::connectToNotaryRoutine: pre-existing contact in contactsToReach");
+            exit(EXIT_FAILURE);
+        }
+        else serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
     }
 
     cHandler->listenerThreadStopped = true;
+    cHandler->connectToThreadStopped = true;
     serversHandler->contacts_mutex.unlock();
-    return NULL;
+    return;
 }
 
 void OtherServersHandler::loadContactsReachable(list<unsigned long> &notariesList)
@@ -501,11 +510,12 @@ bool OtherServersHandler::sendMessage(unsigned long notaryNr, string &msg)
     }
     ContactHandler *ch = contactsReachable[notaryNr];
     ch->addMessage(msg);
-    ServersNotaryPair* snpair = new ServersNotaryPair(this, notaryNr);
-    pthread_t connectToThread;
-    if(pthread_create(&connectToThread, NULL, connectToNotaryRoutine, (void*) snpair) >= 0)
+    if (ch->connectToThreadStopped)
     {
-        pthread_detach(connectToThread);
+        ch->connectToThreadStopped = false;
+        if (ch->connectToThread != nullptr) delete ch->connectToThread;
+        ch->connectToThread = new thread(connectToNotaryRoutine, ch);
+        ((thread*)ch->connectToThread)->detach();
     }
     contacts_mutex.unlock();
     return true;
@@ -770,7 +780,7 @@ void OtherServersHandler::checkNewerEntry(unsigned char listType, unsigned long 
     sendMessage(notaryNr, message);
 }
 
-void OtherServersHandler::checkNewerEntry(unsigned char listType, CompleteID lastEntryID, unsigned short maxNotaries)
+void OtherServersHandler::checkNewerEntry(unsigned char listType, CompleteID lastEntryID, unsigned short maxNotaries, bool changePos)
 {
     contacts_mutex.lock();
 
@@ -790,12 +800,14 @@ void OtherServersHandler::checkNewerEntry(unsigned char listType, CompleteID las
 
     // select notaries
     set<unsigned long> selectedNotaries;
+    unsigned short pos = selectedNotaryPos;
     for (int i=0; i<maxNotaries; i++)
     {
-        selectedNotaryPos = selectedNotaryPos % vectorSize;
-        selectedNotaries.insert(reachableNotariesVector[selectedNotaryPos]);
-        selectedNotaryPos++;
+        pos = pos % vectorSize;
+        selectedNotaries.insert(reachableNotariesVector[pos]);
+        pos++;
     }
+    if (changePos) selectedNotaryPos = pos;
 
     contacts_mutex.unlock();
 
@@ -839,7 +851,10 @@ void OtherServersHandler::trashContact(ContactHandler* ch)
     ch->socketNrInAttempt=-1;
     closeconnection(ch->socket);
     ch->socket=-1;
-    if (!ch->listenerThreadStopped || !ch->attemptInterrupterStopped) trashedContacts.insert(trashedContacts.end(), ch);
+    if (!ch->listenerThreadStopped || !ch->attemptInterrupterStopped || !ch->connectToThreadStopped)
+    {
+        trashedContacts.insert(trashedContacts.end(), ch);
+    }
     else
     {
         delete ch;
@@ -854,7 +869,10 @@ bool OtherServersHandler::removeTrash()
     for (it=trashedContacts.begin(); it!=trashedContacts.end(); ++it)
     {
         ch=*it;
-        if (ch->listenerThreadStopped && ch->attemptInterrupterStopped) removableContacts.insert(removableContacts.end(), ch);
+        if (ch->listenerThreadStopped && ch->attemptInterrupterStopped && ch->connectToThreadStopped)
+        {
+            removableContacts.insert(removableContacts.end(), ch);
+        }
     }
     for (it=removableContacts.begin(); it!=removableContacts.end(); ++it)
     {
@@ -905,19 +923,25 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
                 if (ch->lastListeningTime + tolerableConnectionGapInMs < currentTime || ch->failedAttempts > minAttempts)
                 {
                     puts("OtherServersHandler::reachOutRoutine: no connection for too long");
-                    ContactHandler* contact = new ContactHandler(notary, ch->ip, ch->port, ch->validSince, ch->actingUntil);
+                    ContactHandler* contact = new ContactHandler(notary, ch->ip, ch->port, ch->validSince, ch->actingUntil, serversHandler);
                     serversHandler->trashContact(ch);
                     serversHandler->contactsReachable.erase(notary);
                     serversHandler->reachableNotariesVectorCorrect=false;
-                    serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
+                    if (serversHandler->contactsToReach.count(notary) > 0)
+                    {
+                        puts("OtherServersHandler::reachOutRoutine: pre-existing contact in contactsToReach");
+                        exit(EXIT_FAILURE);
+                    }
+                    else serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
                 }
                 else if (ch->lastListeningTime + tolerableConnectionGapInMs/2 < currentTime || ch->msgStrLength()>0)
                 {
-                    ServersNotaryPair* snpair = new ServersNotaryPair(serversHandler, notary);
-                    pthread_t connectToThread;
-                    if(pthread_create(&connectToThread, NULL, connectToNotaryRoutine, (void*) snpair) >= 0)
+                    if (ch->connectToThreadStopped)
                     {
-                        pthread_detach(connectToThread);
+                        ch->connectToThreadStopped = false;
+                        if (ch->connectToThread != nullptr) delete ch->connectToThread;
+                        ch->connectToThread = new thread(connectToNotaryRoutine, ch);
+                        ((thread*)ch->connectToThread)->detach();
                     }
                 }
             }
@@ -926,11 +950,16 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
                 string out = "OtherServersHandler::reachOutRoutine: connection time out, notary ";
                 out.append(to_string(notary));
                 puts(out.c_str());
-                ContactHandler* contact = new ContactHandler(notary, ch->ip, ch->port, ch->validSince, ch->actingUntil);
+                ContactHandler* contact = new ContactHandler(notary, ch->ip, ch->port, ch->validSince, ch->actingUntil, serversHandler);
                 serversHandler->trashContact(ch);
                 serversHandler->contactsReachable.erase(notary);
                 serversHandler->reachableNotariesVectorCorrect=false;
-                serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
+                if (serversHandler->contactsToReach.count(notary) > 0)
+                {
+                    puts("OtherServersHandler::reachOutRoutine: pre-existing contact in contactsToReach");
+                    exit(EXIT_FAILURE);
+                }
+                else serversHandler->contactsToReach.insert(pair<unsigned long, ContactHandler*>(notary, contact));
             }
         }
 
@@ -958,11 +987,12 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
                 }
                 else
                 {
-                    ServersNotaryPair* snpair = new ServersNotaryPair(serversHandler, notary);
-                    pthread_t connectToThread;
-                    if(pthread_create(&connectToThread, NULL, connectToNotaryRoutine, (void*) snpair) >= 0)
+                    if (ch->connectToThreadStopped)
                     {
-                        pthread_detach(connectToThread);
+                        ch->connectToThreadStopped = false;
+                        if (ch->connectToThread != nullptr) delete ch->connectToThread;
+                        ch->connectToThread = new thread(connectToNotaryRoutine, ch);
+                        ((thread*)ch->connectToThread)->detach();
                     }
                 }
             }
@@ -999,9 +1029,9 @@ void* OtherServersHandler::reachOutRoutine(void* servers)
     return NULL;
 }
 
-void* OtherServersHandler::attemptInterrupter(void *contactInfo)
+void OtherServersHandler::attemptInterrupter(ContactHandler* contactHandler)
 {
-    ContactHandler* ci = (ContactHandler*) contactInfo;
+    ContactHandler* ci = (ContactHandler*) contactHandler;
     ci->attemptInterrupterStopped = false;
     int sock = ci->socketNrInAttempt;
     if (sock == -1) goto close;
@@ -1017,12 +1047,12 @@ void* OtherServersHandler::attemptInterrupter(void *contactInfo)
 close:
     ci->socketNrInAttempt=-1;
     ci->attemptInterrupterStopped = true;
-    return NULL;
+    return;
 }
 
-void* OtherServersHandler::socketReader(void* contactInfo)
+void OtherServersHandler::socketReader(ContactHandler* contactHandler)
 {
-    ContactHandler* ci = (ContactHandler*) contactInfo;
+    ContactHandler* ci = (ContactHandler*) contactHandler;
     ci->listenerThreadStopped=false;
     ci->failedAttempts=0;
     ci->lastConnectionTime = systemTimeInMs();
@@ -1054,16 +1084,20 @@ close:
     delete ci->answerBuilder;
     ci->answerBuilder=nullptr;
     ci->listenerThreadStopped=true;
-    return NULL;
+    return;
 }
 
-OtherServersHandler::ContactHandler::ContactHandler(unsigned long n, string i, int p, unsigned long long v, unsigned long long au) : notaryNr(n),
-    ip(i), port(p), validSince(v), actingUntil(au)
+OtherServersHandler::ContactHandler::ContactHandler(unsigned long n, string i, int p, unsigned long long v, unsigned long long au,
+        OtherServersHandler* sh) : notaryNr(n), ip(i), port(p), validSince(v), actingUntil(au), serversHandler(sh)
 {
     answerBuilder=nullptr;
     socket=-1;
     listenerThreadStopped=true;
     attemptInterrupterStopped=true;
+    connectToThreadStopped=true;
+    connectToThread=nullptr;
+    listenerThread=nullptr;
+    attemptInterruptionThread=nullptr;
     socketNrInAttempt=-1;
     failedAttempts=0;
     lastConnectionTime=0;
@@ -1137,8 +1171,4 @@ unsigned long long OtherServersHandler::systemTimeInMs()
                           system_clock::now().time_since_epoch()
                       );
     return ms.count();
-}
-
-OtherServersHandler::ServersNotaryPair::ServersNotaryPair(OtherServersHandler* s, unsigned long n) : servers(s), notary(n)
-{
 }

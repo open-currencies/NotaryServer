@@ -15,6 +15,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <thread>
 #include <mutex>
 #include "MessageBuilder.h"
 #include "Type13Entry.h"
@@ -33,7 +34,7 @@ public:
     void addContact(unsigned long notary, string ip, int port, unsigned long long validSince, unsigned long long activeUntil);
     void startConnector(RequestProcessor* r);
     void stopSafely();
-    void checkNewerEntry(unsigned char listType, CompleteID lastEntryID, unsigned short maxNotaries);
+    void checkNewerEntry(unsigned char listType, CompleteID lastEntryID, unsigned short maxNotaries, bool changePos);
     void checkNewerEntry(unsigned char listType, unsigned long notaryNr, CompleteID lastEntryID);
     unsigned long long getWellConnectedSince();
     bool wellConnected();
@@ -59,21 +60,12 @@ private:
     MessageBuilder* msgBuilder;
 
     bool sendMessage(unsigned long notaryNr, string &msg);
-    struct ServersNotaryPair
-    {
-        OtherServersHandler* servers;
-        unsigned long notary;
-        ServersNotaryPair(OtherServersHandler* s, unsigned long n);
-    };
-    static void *connectToNotaryRoutine(void *serversNotaryPair);
-    void removeDeadConnection(unsigned long notary);
-
     void trashAllContacts();
     bool removeTrash();
 
     struct ContactHandler
     {
-        ContactHandler(unsigned long n, string i, int p, unsigned long long v, unsigned long long au);
+        ContactHandler(unsigned long n, string i, int p, unsigned long long v, unsigned long long au, OtherServersHandler* sh);
         ~ContactHandler();
         const unsigned long notaryNr;
         const string ip;
@@ -83,7 +75,7 @@ private:
         volatile int failedAttempts;
         // message buffer data
         mutex message_buffer_mutex;
-        volatile string messagesStr;
+        const string messagesStr;
         void addMessage(string &msg);
         size_t msgStrLength();
         // relevant if connection established:
@@ -91,13 +83,19 @@ private:
         volatile unsigned long long lastListeningTime;
         volatile int socket;
         volatile RequestBuilder* answerBuilder;
-        volatile pthread_t listenerThread;
+        volatile thread* listenerThread;
         volatile bool listenerThreadStopped;
         // for time out thread
-        volatile pthread_t attemptInterruptionThread;
+        volatile thread* attemptInterruptionThread;
         volatile bool attemptInterrupterStopped;
         volatile int socketNrInAttempt;
+        // for connector thread
+        volatile thread* connectToThread;
+        volatile bool connectToThreadStopped;
+        const OtherServersHandler* serversHandler;
     };
+
+    static void connectToNotaryRoutine(ContactHandler *contactHandler);
 
     mutex contacts_mutex;
     map<unsigned long, ContactHandler*> contactsReachable;
@@ -111,8 +109,8 @@ private:
     volatile bool reachOutRunning;
     volatile bool reachOutStopped;
 
-    static void *attemptInterrupter(void *servers);
-    static void *socketReader(void *contactHandler);
+    static void attemptInterrupter(ContactHandler* contactHandler);
+    static void socketReader(ContactHandler* contactHandler);
     static void closeconnection(int sock);
 
     static unsigned long long systemTimeInMs();

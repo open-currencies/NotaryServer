@@ -91,7 +91,7 @@ void* InternalThread::routine(void *internalThread)
                 CompleteID upToDateID = internal->db->getUpToDateID(listType);
                 internal->db->unlock();
 
-                internal->servers->checkNewerEntry(listType, upToDateID, 1);
+                internal->servers->checkNewerEntry(listType, upToDateID, 1, (listType==4));
             }
             checkNewEntriesNext=currentTime+checkNewEntriesInterval;
         }

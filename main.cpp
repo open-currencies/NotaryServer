@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <mutex>
+#include <thread>
 #include <list>
 #include "rsa.h"
 #include "files.h"
@@ -31,7 +32,6 @@ typedef uint8_t byte;
 using namespace std;
 
 void deleteTrashedClients();
-void *clientHandler(void *);
 void *socketListener(void *);
 volatile bool socketListenerRunning;
 void *timeOutCheckRoutine(void *);
@@ -46,14 +46,21 @@ MessageBuilder * msgBuilder;
 
 struct Client
 {
-    pthread_t clientThread;
+    thread* clientThread;
     volatile bool threadStopped;
     const int sock;
     Client(int s) : sock(s)
     {
         threadStopped=false;
+        clientThread=nullptr;
+    }
+    ~Client()
+    {
+        if (clientThread != nullptr) delete clientThread;
     }
 };
+
+void clientHandler(Client* client);
 
 mutex clients_mutex;
 set<Client*> clients;
@@ -439,27 +446,8 @@ void *socketListener(void *portnr)
         clientsByConnectionTime[currentTime]->insert(newClient);
         clients_mutex.unlock();
 
-        pthread_attr_t tattr;
-        pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
-        if(!running || pthread_create(&(newClient->clientThread), &tattr, clientHandler, (void*) newClient) < 0)
-        {
-            puts("main::socketListener: could not create client thread");
-            closeconnection(new_socket);
-            clients_mutex.lock();
-            clients.erase(newClient);
-            connectionTimeByClient.erase(newClient);
-            if (clientsByConnectionTime.count(currentTime)>0)
-            {
-                clientsByConnectionTime[currentTime]->erase(newClient);
-                if (clientsByConnectionTime[currentTime]->size()<=0)
-                {
-                    delete clientsByConnectionTime[currentTime];
-                    clientsByConnectionTime.erase(currentTime);
-                }
-            }
-            delete newClient;
-            clients_mutex.unlock();
-        }
+        newClient->clientThread = new thread(clientHandler, newClient);
+        ((thread*)newClient->clientThread)->detach();
 
         // clean up trash
         clients_mutex.lock();
@@ -473,10 +461,8 @@ void *socketListener(void *portnr)
 }
 
 // handle connection for each client
-void *clientHandler(void *client_struct)
+void clientHandler(Client* client)
 {
-    //Get the client structure
-    Client* client = (Client*) client_struct;
     const int sock = client->sock;
     byte* buffer = new byte[1024];
     RequestBuilder builder(maxRequestLength, requests, sock);
@@ -514,9 +500,9 @@ close:
             }
         }
     }
-    clients_mutex.unlock();
     client->threadStopped=true;
-    return NULL;
+    clients_mutex.unlock();
+    return;
 }
 
 void *timeOutCheckRoutine(void *clientsList)

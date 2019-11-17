@@ -6,7 +6,8 @@
 #define minUpToDateTimeBufferInMs 7000
 #define participationTimeBufferInMs 250
 #define minTimeBetweenDownloadAttemptsInMs 3000
-#define blockCacheSizeInMb 500
+#define blockCacheSizeInMb 150
+#define writeBufferSizeInMb 16
 
 Database::Database(const string& dbDir) : ownNumber(0)
 {
@@ -25,8 +26,9 @@ Database::Database(const string& dbDir) : ownNumber(0)
     rocksdb::Options options;
     options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
     options.optimize_filters_for_hits = true;
-    options.write_buffer_size = 16 * 1024 * 1024;
-    options.max_write_buffer_number = 5;
+    options.write_buffer_size = writeBufferSizeInMb * 1024 * 1024LL;
+    options.db_write_buffer_size = writeBufferSizeInMb * 1024 * 1024LL;
+    options.max_write_buffer_number = 3;
     options.create_if_missing = true;
 
     rocksdb::Status status;
